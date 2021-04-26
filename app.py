@@ -16,10 +16,46 @@ def retrievesheet():
 	credentials = ServiceAccountCredentials.from_json_keyfile_name('my_project.json', scope)
 	gc = gspread.authorize(credentials)
 	master_sh=gc.open_by_key("1vynkrJPMaXzAUxGS8bJIoiLZCQdAR9P7rKpholnA8yk")
-	master_worksheet = master_sh.worksheet("Sheet1")
-	dfkeys = pd.DataFrame(master_worksheet.get_all_values()[1:11])
-	print(dfkeys.columns)
 
+	print(dfkeys.columns)
+	if 'contact_id' in webhook_json.keys():
+		contact_id = webhook_json['contact_id']
+	else: 
+		contact_id = ''
+	if 'full_name' in webhook_json.keys():
+		full_name = webhook_json['full_name']
+	else: 
+		full_name = ''
+	if 'email' in webhook_json.keys():
+		email = webhook_json['email']
+	else: 
+		email = ''
+	if 'tags' in webhook_json.keys():
+		tags = ','.join([s for s in webhook_json['tags']]) if isinstance(webhook_json['tags'], list) else webhook_json['tags']
+	else: 
+		tags = ''
+	if 'phone' in webhook_json.keys():
+		phone = webhook_json['phone']
+	else: 
+		phone = ''
+	if 'location' in webhook_json.keys():
+		location_name = webhook_json['location']['name']
+		location_id = webhook_json['location']['id']
+	else: 
+		location_name = ''
+		location_id = ''
+	if 'date_created' in webhook_json.keys():
+		date_created = webhook_json['date_created']
+	else: 
+		date_created = '
+	if 'message' in webhook_json.keys():
+	message = BeautifulSoup(webhook_json['message']['body']).find('div',{"dir":"ltr"}).text
+	else: 
+		message = ''
+
+	row_count = len(master_sh.worksheet('Sheet1').get_all_records()) + 3
+
+	master_sh.values_append('Sheet1!A'+str(row_count), {'valueInputOption': 'USER_ENTERED'}, {'values': [[contact_id,full_name,email,tags,phone,location_name,location_id,message]]})
 
 app = Flask(__name__)
 @app.route('/webhook', methods=['POST'])
