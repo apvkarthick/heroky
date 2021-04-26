@@ -17,7 +17,7 @@ def retrievesheet():
 	gc = gspread.authorize(credentials)
 	master_sh=gc.open_by_key("1vynkrJPMaXzAUxGS8bJIoiLZCQdAR9P7rKpholnA8yk")
 
-	print(dfkeys.columns)
+	
 	if 'contact_id' in webhook_json.keys():
 		contact_id = webhook_json['contact_id']
 	else: 
@@ -55,7 +55,7 @@ def retrievesheet():
 
 	row_count = len(master_sh.worksheet('Sheet1').get_all_records()) + 3
 
-	master_sh.values_append('Sheet1!A'+str(row_count), {'valueInputOption': 'USER_ENTERED'}, {'values': [[contact_id,full_name,email,tags,phone,location_name,location_id,message]]})
+	master_sh.values_append('Sheet1!A'+str(row_count), {'valueInputOption': 'USER_ENTERED'}, {'values': [[contact_id,full_name,email,tags,phone,location_name,location_id,message,date_created]]})
 
 app = Flask(__name__)
 @app.route('/webhook', methods=['POST'])
