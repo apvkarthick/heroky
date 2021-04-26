@@ -1,4 +1,4 @@
-from os import environ
+import os
 from flask import Flask, request, abort
 #'O:\\downloads-nov-2018\\python-self-programs\\akarthick-sheets-api.json'
 
@@ -13,7 +13,7 @@ def retrievesheet():
     from oauth2client.service_account import ServiceAccountCredentials
     scope = ['https://spreadsheets.google.com/feeds',
     'https://www.googleapis.com/auth/drive']
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(environ["GOOGLE_SHEETS_CREDS_JSON"] , scope)
+    credentials = ServiceAccountCredentials.from_json_keyfile_name(os.getenv("GOOGLE_SHEETS_CREDS_JSON"), scope)
     gc = gspread.authorize(credentials)
     master_sh=gc.open_by_key("1JTJlCdD1k96WUxkxuBq7OU7btBZqKxny9x8p9lo5IU0")
     master_worksheet = master_sh.worksheet("Sheet2")
