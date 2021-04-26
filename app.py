@@ -3,7 +3,7 @@ from flask import Flask, request, abort
 
 
 
-def retrievesheet():
+def retrievesheet(webhook_json):
 	import gspread
 	from oauth2client.client import GoogleCredentials as GC
 	from gspread_dataframe import get_as_dataframe, set_with_dataframe
@@ -60,7 +60,7 @@ def retrievesheet():
 app = Flask(__name__)
 @app.route('/webhook', methods=['POST'])
 def index():
-	retrievesheet()
+	retrievesheet(request.json)
 	print("123")
 	if request.method == 'POST':
 		print(request.json)
