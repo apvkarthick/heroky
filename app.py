@@ -22,7 +22,7 @@ def retrievesheet():
 
 
 app = Flask(__name__)
-@app.route('/', methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def index():
 	retrievesheet()
 	print("123")
