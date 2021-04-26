@@ -9,6 +9,7 @@ def retrievesheet(webhook_json):
 	from gspread_dataframe import get_as_dataframe, set_with_dataframe
 	from datetime import datetime
 	import pandas as pd
+	from bs4 import BeautifulSoup
 	#gc = gspread.authorize(GC.get_application_default())
 	from oauth2client.service_account import ServiceAccountCredentials
 	scope = ['https://spreadsheets.google.com/feeds',
