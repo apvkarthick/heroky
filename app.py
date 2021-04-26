@@ -15,14 +15,14 @@ def retrievesheet():
 	'https://www.googleapis.com/auth/drive']
 	credentials = ServiceAccountCredentials.from_json_keyfile_name('my_project.json', scope)
 	gc = gspread.authorize(credentials)
-	master_sh=gc.open_by_key("1JTJlCdD1k96WUxkxuBq7OU7btBZqKxny9x8p9lo5IU0")
-	master_worksheet = master_sh.worksheet("Sheet2")
+	master_sh=gc.open_by_key("1vynkrJPMaXzAUxGS8bJIoiLZCQdAR9P7rKpholnA8yk")
+	master_worksheet = master_sh.worksheet("Sheet1")
 	dfkeys = pd.DataFrame(master_worksheet.get_all_values()[1:11])
 	print(dfkeys.columns)
 
 
 app = Flask(__name__)
-@app.route('/', methods=['GET'])
+@app.route('/', methods=['POST'])
 def index():
 	retrievesheet()
 	print("123")
