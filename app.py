@@ -56,7 +56,7 @@ def retrievesheet(webhook_json):
 
 	row_count = len(master_sh.worksheet('Sheet1').get_all_records()) + 3
 
-	master_sh.values_append('Sheet1!A'+str(row_count), {'valueInputOption': 'USER_ENTERED'}, {'values': [[contact_id,full_name,email,tags,phone,,date_created,location_name,location_id,message]]})
+	master_sh.values_append('Sheet1!A'+str(row_count), {'valueInputOption': 'USER_ENTERED'}, {'values': [[contact_id,full_name,email,tags,phone,date_created,location_name,location_id,message]]})
 
 app = Flask(__name__)
 @app.route('/webhook', methods=['POST'])
