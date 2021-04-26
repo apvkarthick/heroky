@@ -19,6 +19,7 @@ datetime-distance = "*"
 dateutils = "*"
 pandas = "*"
 pandas-datareader = "*"
+bs4 = "*"
 
 
 [dev-packages]
