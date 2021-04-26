@@ -24,7 +24,7 @@ def retrievesheet():
 app = Flask(__name__)
 @app.route('/', methods=['GET'])
 def index():
-    #retrievesheet()
+    retrievesheet()
     print("123")
     if request.method == 'POST':
         print(request.json)
