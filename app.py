@@ -47,7 +47,7 @@ def retrievesheet():
 	if 'date_created' in webhook_json.keys():
 		date_created = webhook_json['date_created']
 	else: 
-		date_created = '
+		date_created = ''
 	if 'message' in webhook_json.keys():
 		message = BeautifulSoup(webhook_json['message']['body']).find('div',{"dir":"ltr"}).text
 	else: 
