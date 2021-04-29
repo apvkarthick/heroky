@@ -61,10 +61,11 @@ def retrievesheet(webhook_json):
 app = Flask(__name__)
 @app.route('/webhook', methods=['POST'])
 def index():
+	print(request.json)
 	retrievesheet(request.json)
 	print("123")
 	if request.method == 'POST':
-		print(request.json)
+		
 		return 'success', 200
 	else:
 		abort(400)
