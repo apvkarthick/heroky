@@ -42,6 +42,7 @@ def retrievesheet(webhook_json):
 	if 'location' in webhook_json.keys():
 		location_name = webhook_json['location']['name']
 		location_id = webhook_json['location']['id']
+		#location_id="https://app.gohighlevel.com/location/"+str(location_id)+"/conversations/"
 	else: 
 		location_name = ''
 		location_id = ''
