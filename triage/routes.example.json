@@ -1,0 +1,32 @@
+{
+  "allowed_chat_ids": [-1001234567890],
+  "allowed_user_ids": [],
+  "default_lane": "general",
+  "lanes": {
+    "bug": {
+      "description": "Bug reports, errors, crashes, regressions, failing tests",
+      "keywords": ["bug", "error", "crash", "exception", "broken", "traceback", "fails"],
+      "cwd": "~/code/heroky",
+      "permission_mode": "acceptEdits",
+      "system": "You are the bug-fix session. Reproduce, fix, and summarise briefly."
+    },
+    "feature": {
+      "description": "New feature requests, enhancements, product changes",
+      "keywords": ["feature", "add support", "enhancement", "would be nice", "request"],
+      "cwd": "~/code/heroky",
+      "permission_mode": "plan"
+    },
+    "infra": {
+      "description": "Deploys, Heroku, CI, servers, env vars, outages, performance",
+      "keywords": ["deploy", "heroku", "ci", "outage", "down", "env var", "build"],
+      "cwd": "~/code/heroky",
+      "permission_mode": "default",
+      "allowed_tools": ["Read", "Grep", "Glob", "Bash(git log:*)", "Bash(git status:*)"]
+    },
+    "general": {
+      "description": "Anything else: questions, docs, unclear requests",
+      "keywords": [],
+      "cwd": "~/code/heroky"
+    }
+  }
+}

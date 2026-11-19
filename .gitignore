@@ -102,3 +102,7 @@ ENV/
 
 # Pipenv
 Pipfile.lock
+
+# triage bot
+triage/routes.json
+triage/state.json
