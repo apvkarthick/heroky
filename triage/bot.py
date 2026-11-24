@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,7 @@ TRIAGE_MODEL = os.environ.get("TRIAGE_MODEL", "claude-haiku-5-5")
 
 _state_lock = threading.Lock()
 _lane_locks = {}
+STATUS = {}  # lane -> {"busy": bool, "since": ts, "last_ok": ts}
 
 
 # ---------- config / state ----------
@@ -70,8 +72,10 @@ def llm_lane(text, cfg):
     lanes = "\n".join(f"- {n}: {l['description']}" for n, l in cfg["lanes"].items())
     body = {
         "model": TRIAGE_MODEL,
-        "max_tokens": 20,
-        "system": "You triage team messages. Reply with exactly one lane name from the list, nothing else.\n" + lanes,
+        "max_tokens": 40,
+        "system": ("You are the orchestrator triaging team messages. Reply with the lane name that should "
+                   "handle it. Only if the message clearly contains separate tasks for different lanes, "
+                   "reply with up to 3 lane names separated by commas. Nothing else.\n" + lanes),
         "messages": [{"role": "user", "content": text[:4000]}],
     }
     req = urllib.request.Request(
@@ -83,50 +87,63 @@ def llm_lane(text, cfg):
     except Exception as e:  # network/API failure -> fall back to keywords
         print("llm triage failed:", e, file=sys.stderr)
         return None
-    return out if out in cfg["lanes"] else None
+    picked = []
+    for name in (p.strip(" #/.") for p in out.split(",")):
+        if name in cfg["lanes"] and name not in picked:
+            picked.append(name)
+    return picked[:3] or None
 
 
 def triage(text, cfg):
-    """Returns (lane, cleaned_text, method)."""
+    """Returns ([lanes], cleaned_text, method)."""
     lane, rest = explicit_lane(text, cfg)
     if lane:
-        return lane, rest, "explicit"
-    lane = llm_lane(text, cfg)
-    if lane:
-        return lane, text, "llm"
-    return keyword_lane(text, cfg), text, "keywords"
+        return [lane], rest, "explicit"
+    lanes = llm_lane(text, cfg)
+    if lanes:
+        return lanes, text, "llm"
+    return [keyword_lane(text, cfg)], text, "keywords"
 
 
 # ---------- dispatch to Claude Code ----------
 def run_claude(lane, lane_cfg, prompt, state):
     lock = _lane_locks.setdefault(lane, threading.Lock())
     with lock:  # one turn at a time per session
-        with _state_lock:
-            sid = state["sessions"].get(lane)
-        cmd = ["claude", "-p", prompt, "--output-format", "json",
-               "--permission-mode", lane_cfg.get("permission_mode", "acceptEdits")]
-        if sid:
-            cmd += ["--resume", sid]
-        else:
-            sid = str(uuid.uuid4())
-            cmd += ["--session-id", sid]
-        if lane_cfg.get("allowed_tools"):
-            cmd += ["--allowedTools", ",".join(lane_cfg["allowed_tools"])]
-        if lane_cfg.get("system"):
-            cmd += ["--append-system-prompt", lane_cfg["system"]]
-        proc = subprocess.run(cmd, cwd=os.path.expanduser(lane_cfg["cwd"]),
-                              capture_output=True, text=True,
-                              timeout=lane_cfg.get("timeout", 900))
-        if proc.returncode != 0:
-            return f"claude exited {proc.returncode}: {proc.stderr.strip()[-500:]}"
+        STATUS[lane] = {**STATUS.get(lane, {}), "busy": True, "since": time.time()}
         try:
-            data = json.loads(proc.stdout)
-        except ValueError:
-            return proc.stdout.strip()[-3500:]
-        with _state_lock:
-            state["sessions"][lane] = data.get("session_id", sid)
-            save_state(state)
-        return data.get("result") or "(no output)"
+            return _run_claude_locked(lane, lane_cfg, prompt, state)
+        finally:
+            STATUS[lane]["busy"] = False
+            STATUS[lane]["last_ok"] = time.time()
+
+
+def _run_claude_locked(lane, lane_cfg, prompt, state):
+    with _state_lock:
+        sid = state["sessions"].get(lane)
+    cmd = ["claude", "-p", prompt, "--output-format", "json",
+           "--permission-mode", lane_cfg.get("permission_mode", "acceptEdits")]
+    if sid:
+        cmd += ["--resume", sid]
+    else:
+        sid = str(uuid.uuid4())
+        cmd += ["--session-id", sid]
+    if lane_cfg.get("allowed_tools"):
+        cmd += ["--allowedTools", ",".join(lane_cfg["allowed_tools"])]
+    if lane_cfg.get("system"):
+        cmd += ["--append-system-prompt", lane_cfg["system"]]
+    proc = subprocess.run(cmd, cwd=os.path.expanduser(lane_cfg["cwd"]),
+                          capture_output=True, text=True,
+                          timeout=lane_cfg.get("timeout", 900))
+    if proc.returncode != 0:
+        return f"claude exited {proc.returncode}: {proc.stderr.strip()[-500:]}"
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return proc.stdout.strip()[-3500:]
+    with _state_lock:
+        state["sessions"][lane] = data.get("session_id", sid)
+        save_state(state)
+    return data.get("result") or "(no output)"
 
 
 # ---------- telegram ----------
@@ -143,25 +160,74 @@ def reply(token, chat_id, msg_id, text):
            reply_to_message_id=msg_id)
 
 
-def handle(token, cfg, state, msg):
+def handle(token, cfg, state, msg, pool):
+    try:
+        _handle(token, cfg, state, msg, pool)
+    except Exception as e:  # never let a worker thread die silently
+        print("handler error:", e, file=sys.stderr)
+
+
+def _handle(token, cfg, state, msg, pool):
     chat_id, user_id = msg["chat"]["id"], msg.get("from", {}).get("id")
-    text = msg.get("text") or msg.get("caption") or ""
-    allowed = cfg.get("allowed_chat_ids", [])
-    if not text or (chat_id not in allowed and user_id not in cfg.get("allowed_user_ids", [])):
-        return  # fail closed: ignore strangers silently
-    if text.strip() in ("/lanes", "/start"):
+    text = (msg.get("text") or msg.get("caption") or "").strip()
+    if not text:
+        return
+    cmd = text.split()[0].split("@")[0]
+    if cmd == "/id":  # open to anyone: lets you find the id to allowlist
+        reply(token, chat_id, msg["message_id"], f"chat_id: {chat_id}\nuser_id: {user_id}")
+        return
+    if chat_id not in cfg.get("allowed_chat_ids", []) and user_id not in cfg.get("allowed_user_ids", []):
+        print(f"ignored message from chat {chat_id} user {user_id} (not allowlisted)", file=sys.stderr)
+        return
+    if cmd in ("/lanes", "/start"):
         reply(token, chat_id, msg["message_id"], "Lanes:\n" + "\n".join(
             f"#{n} - {l['description']}" for n, l in cfg["lanes"].items()))
         return
+    if cmd == "/status":
+        now = time.time()
+        rows = []
+        for n in cfg["lanes"]:
+            st = STATUS.get(n, {})
+            sid = state["sessions"].get(n, "no session yet")
+            busy = f"busy {int(now - st['since'])}s" if st.get("busy") else "idle"
+            rows.append(f"{n}: {busy} | session {sid[:8]}")
+        reply(token, chat_id, msg["message_id"], "\n".join(rows))
+        return
     who = msg.get("from", {}).get("first_name", "team")
-    lane, body, how = triage(text, cfg)
-    reply(token, chat_id, msg["message_id"], f"-> {lane} ({how}). Working on it...")
-    prompt = f"[Telegram message from {who}]\n{body}"
-    try:
-        out = run_claude(lane, cfg["lanes"][lane], prompt, state)
-    except Exception as e:
-        out = f"dispatch failed: {e}"
-    reply(token, chat_id, msg["message_id"], f"[{lane}] {out}")
+    lanes, body, how = triage(text, cfg)
+    reply(token, chat_id, msg["message_id"], f"-> {', '.join(lanes)} ({how}). Working on it...")
+    tg(token, "sendChatAction", chat_id=chat_id, action="typing")
+
+    def work(lane):
+        prompt = f"[Telegram message from {who}]\n{body}"
+        if len(lanes) > 1:
+            prompt += f"\n\n(Orchestrator: this message was split across lanes {lanes}; handle only the part that belongs to '{lane}'.)"
+        try:
+            out = run_claude(lane, cfg["lanes"][lane], prompt, state)
+        except Exception as e:
+            out = f"dispatch failed: {e}"
+        reply(token, chat_id, msg["message_id"], f"[{lane}] {out}")
+
+    for lane in lanes:  # fan out; per-lane locks keep each session serial
+        pool.submit(work, lane)
+
+
+def preflight(token, cfg):
+    me = tg(token, "getMe")
+    print(f"connected as @{me['username']}")
+    hook = tg(token, "getWebhookInfo")
+    if hook.get("url"):
+        print("webhook was set, removing so polling works:", hook["url"])
+        tg(token, "deleteWebhook")
+    if not me.get("can_read_all_group_messages"):
+        print("WARNING: privacy mode ON - bot only sees /commands in groups. "
+              "BotFather -> /setprivacy -> Disable, then re-add bot to the group.")
+    print("allowed_chat_ids:", cfg.get("allowed_chat_ids"), "allowed_user_ids:", cfg.get("allowed_user_ids"))
+    for n, l in cfg["lanes"].items():
+        if not os.path.isdir(os.path.expanduser(l["cwd"])):
+            print(f"WARNING: lane '{n}' cwd missing: {l['cwd']}")
+    if subprocess.run(["which", "claude"], capture_output=True).returncode:
+        print("WARNING: `claude` CLI not found on PATH")
 
 
 def main():
@@ -169,7 +235,8 @@ def main():
     cfg, state = load_config(), load_state()
     if not cfg.get("allowed_chat_ids") and not cfg.get("allowed_user_ids"):
         sys.exit("Set allowed_chat_ids or allowed_user_ids in routes.json (bot ignores everyone otherwise).")
-    pool = ThreadPoolExecutor(max_workers=8)
+    pool = ThreadPoolExecutor(max_workers=16)
+    preflight(token, cfg)
     print("triage bot running; lanes:", ", ".join(cfg["lanes"]))
     while True:
         try:
@@ -183,7 +250,7 @@ def main():
                 state["offset"] = u["update_id"] + 1
                 save_state(state)
             if "message" in u:
-                pool.submit(handle, token, cfg, state, u["message"])
+                pool.submit(handle, token, cfg, state, u["message"], pool)
 
 
 if __name__ == "__main__":

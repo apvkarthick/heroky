@@ -25,7 +25,19 @@ Telegram group -> bot.py (long-poll) -> triage -> claude -p --resume <lane sessi
 4. `python3 bot.py`  (needs `claude` CLI on PATH and logged in)
 5. Tests: `python3 test_triage.py`
 
-Chat commands: `/lanes` lists lanes; `#lane text` forces a lane.
+Chat commands: `/id` shows the chat/user id (works for anyone, use it to fill
+the allowlist), `/lanes` lists lanes, `/status` shows each lane's session and
+whether it is busy, `#lane text` forces a lane.
+
+## Orchestrator behaviour
+
+- Always watching: long-poll loop, plus a startup self-check (bot identity,
+  clears a conflicting webhook, warns on privacy mode / missing `claude` /
+  bad `cwd`). Messages from non-allowlisted chats are logged to stderr with
+  their chat id instead of vanishing.
+- A message with clearly separate tasks is split across up to 3 lanes, handled
+  in parallel by their own sessions, each replying as `[lane] ...`.
+- Keep it alive: `./run.sh` (restart loop) or `triage-bot.service` (systemd).
 
 ## Notes
 

@@ -1,0 +1,18 @@
+# Linux always-on: copy to ~/.config/systemd/user/, then
+#   systemctl --user daemon-reload && systemctl --user enable --now triage-bot
+#   loginctl enable-linger $USER      # keep running when logged out
+# Put TELEGRAM_BOT_TOKEN (and optional ANTHROPIC_API_KEY) in ~/.config/triage-bot.env
+[Unit]
+Description=Telegram triage orchestrator for Claude Code
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/code/heroky/triage
+EnvironmentFile=%h/.config/triage-bot.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
