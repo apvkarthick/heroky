@@ -1,6 +1,7 @@
 {
   "allowed_chat_ids": [-1001234567890],
   "allowed_user_ids": [],
+  "blocked_terms": ["ClientNameHere", "ProjectCodenameHere"],
   "default_lane": "general",
   "lanes": {
     "bug": {

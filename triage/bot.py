@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.request
 import uuid
+import guard
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -129,8 +130,8 @@ def _run_claude_locked(lane, lane_cfg, prompt, state):
         cmd += ["--session-id", sid]
     if lane_cfg.get("allowed_tools"):
         cmd += ["--allowedTools", ",".join(lane_cfg["allowed_tools"])]
-    if lane_cfg.get("system"):
-        cmd += ["--append-system-prompt", lane_cfg["system"]]
+    cmd += ["--append-system-prompt",
+            (lane_cfg.get("system", "") + "\n\n" + guard.RULE_FOR_SESSIONS).strip()]
     proc = subprocess.run(cmd, cwd=os.path.expanduser(lane_cfg["cwd"]),
                           capture_output=True, text=True,
                           timeout=lane_cfg.get("timeout", 900))
@@ -147,8 +148,28 @@ def _run_claude_locked(lane, lane_cfg, prompt, state):
 
 
 # ---------- telegram ----------
+WITHHELD_DIR = HERE / "withheld"
+BLOCKED_TERMS = []  # set from config in main()
+
+
 def tg(token, method, **params):
-    req = urllib.request.Request(TG.format(token, method), json.dumps(params).encode(),
+    if method in ("sendMessage", "sendDocument", "sendPhoto", "editMessageText"):
+        # Single chokepoint: hard global rule, fail-closed, not configurable off.
+        try:
+            hit = guard.check(str(params.get("text") or params.get("caption") or ""), BLOCKED_TERMS)
+            if method in ("sendDocument", "sendPhoto"):
+                hit = hit or "attachments not allowed"
+        except Exception:
+            hit = "guard error"
+        if hit:
+            WITHHELD_DIR.mkdir(exist_ok=True)
+            (WITHHELD_DIR / f"{int(time.time())}.txt").write_text(str(params.get("text", "")))
+            print(f"BLOCKED outbound telegram message ({hit})", file=sys.stderr)
+            if method != "sendMessage":
+                return {}
+            params = {**params, "text": f"Withheld: reply contained {hit}. Commercial data is never sent to "
+                                        "Telegram. Read the full answer in the local session."}
+        req = urllib.request.Request(TG.format(token, method), json.dumps(params).encode(),
                                  {"content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=params.get("timeout", 10) + 10) as r:
         return json.load(r)["result"]
@@ -233,6 +254,7 @@ def preflight(token, cfg):
 def main():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     cfg, state = load_config(), load_state()
+    BLOCKED_TERMS[:] = cfg.get("blocked_terms", [])
     if not cfg.get("allowed_chat_ids") and not cfg.get("allowed_user_ids"):
         sys.exit("Set allowed_chat_ids or allowed_user_ids in routes.json (bot ignores everyone otherwise).")
     pool = ThreadPoolExecutor(max_workers=16)

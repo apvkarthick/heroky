@@ -106,3 +106,4 @@ Pipfile.lock
 # triage bot
 triage/routes.json
 triage/state.json
+triage/withheld/

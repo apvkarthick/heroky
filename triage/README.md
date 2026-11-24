@@ -51,3 +51,21 @@ whether it is busy, `#lane text` forces a lane.
 - This runs on your desktop, not Heroku (Heroku can't reach your local
   Claude). To use the existing Flask app instead, you'd need a queue between
   them; not built.
+
+## Hard rule: no commercial data to Telegram
+
+Enforced in `guard.py`, called from `bot.tg()` - the single function every
+outbound message goes through (also blocks attachments). Fail-closed: a match
+or a guard error withholds the whole message and sends only a notice; the full
+text is saved locally in `triage/withheld/` (gitignored) for you to read.
+
+- Always-on built-ins: money amounts/currencies, commercial terms (invoice,
+  quote, pricing, budget, revenue, margin, salary, contract terms, GST...),
+  secrets/tokens/keys, emails and phone numbers.
+- `blocked_terms` in `routes.json`: add client and project names (case
+  insensitive). Config can only add terms, never disable the guard.
+- Every lane session also gets the rule appended to its system prompt.
+- It is a pattern filter, so it over-blocks on purpose (e.g. the word "price"
+  in a bug report). It cannot catch commercial data phrased in ways the
+  patterns miss, and it only controls what the bot sends: anything your team
+  types into the group is already on Telegram.
